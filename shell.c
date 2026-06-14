@@ -26,6 +26,8 @@ int main(void) {
                 printf("Shell: No such file or directory exists\n");
                 continue;
             }
+        }else if (strcmp(token, "exit") == 0){
+            exit(EXIT_SUCCESS);
         }else {
             int processID = fork();
 
@@ -47,7 +49,7 @@ int main(void) {
 
                 if (execvp(command, argv) == -1) {
                     printf("Shell: No such command\n");
-                    continue;
+                    exit(EXIT_FAILURE);
                 }
 
             }else {
