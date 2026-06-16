@@ -23,8 +23,7 @@ int main(void) {
         if (strcmp(token, "cd") == 0) {
             char* fileDirectory = strtok(NULL, " \t\n");
             if (chdir(fileDirectory) == -1) {
-                printf("Shell: No such file or directory exists\n");
-                continue;
+                chdir(getenv("HOME"));
             }
         }else if (strcmp(token, "exit") == 0){
             exit(EXIT_SUCCESS);
