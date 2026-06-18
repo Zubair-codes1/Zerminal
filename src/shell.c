@@ -7,13 +7,21 @@
 
 int main(void) {
 
+    char directory[1024];
+
     while (true) {
-        printf("-> ");
+        if (getcwd(directory, sizeof(directory)) == NULL) {
+            printf("Shell: Current directory doesnt exist.\n");
+            break;
+        }
+        printf("%s -> ", directory);
 
         char input[1024];
 
         fgets(input, 1024, stdin);
         input[strlen(input) - 1] = '\0';
+
+        printf("\n");
 
         if (strlen(input) == 0) {
             continue;
