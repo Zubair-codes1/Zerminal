@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -std=c11
 
-TARGET = zerminal
+TARGET = bin/zerminal
 SRC = src/shell.c
 
 $(TARGET): $(SRC)
