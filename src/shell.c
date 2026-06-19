@@ -9,10 +9,14 @@
 // function declarations
 void handleInput(void);
 void handlePipes(char* input, char* pipes_pos);
-void handleRedirection(char* input, char* redirect_pos);
+void handleOutputRedirection(char* input, char* redirect_pos);
+void handleInputRedirection(char* input, char* redirect_pos);
 void runStandardCommands(char* input);
 void runInBuiltCommands(char* token);
 
+/**
+ * Runs the main loop of the shell
+ */
 int main(void) {
 
     char directory[1024];
@@ -48,12 +52,15 @@ void handleInput(void) {
     }
 
     char* pipe_pos = strchr(input, '|');
-    char* redirect_pos = strchr(input, '>');
+    char* output_redirect_pos = strchr(input, '>');
+    char* input_redirect_pos = strchr(input, '<');
 
     if (pipe_pos != NULL) {
         handlePipes(input, pipe_pos);
-    }else if (redirect_pos != NULL) {
-        handleRedirection(input, redirect_pos);
+    }else if (output_redirect_pos != NULL) {
+        handleOutputRedirection(input, output_redirect_pos);
+    }else if (input_redirect_pos != NULL) {
+        handleInputRedirection(input, input_redirect_pos);
     }else {
         runStandardCommands(input);
     }
@@ -148,12 +155,12 @@ void handlePipes(char* input, char* pipe_pos) {
 }
 
 /**
- * Handle redirections of input ( > )
+ * Handle output redirections ( > )
  * 
  * @param input all input
- * @param redirect_pos redirection symbol position
+ * @param redirect_pos redirection symbol position (<)
  */
-void handleRedirection(char* input, char* redirect_pos) {
+void handleOutputRedirection(char* input, char* redirect_pos) {
     *redirect_pos = '\0';          // left command is now input
     char *right = redirect_pos + 1; // right command starts here
     char *left = input;
@@ -167,6 +174,52 @@ void handleRedirection(char* input, char* redirect_pos) {
         right = strtok(right, " \t\n");
         int fd = open(right, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         dup2(fd, STDOUT_FILENO);
+        close(fd);
+
+        left = strtok(left, " \t\n");
+
+        char *argv[64];
+        int argc = 0;
+
+        while (left != NULL && argc < 63) {
+            argv[argc++] = left;
+            left = strtok(NULL, " \t\n");
+        }
+
+        argv[argc] = NULL;  // null for execvp
+
+        char* command = argv[0];
+
+        if (execvp(command, argv) == -1) {
+            printf("Shell: No such command\n");
+            exit(EXIT_FAILURE);
+        }
+
+    }else {
+        waitpid(processID, NULL, 0);
+    }
+}
+
+/**
+ * handle input redirection ( < )
+ * 
+ * @param input full input line
+ * @param redirect_pos position of <
+ */
+void handleInputRedirection(char* input, char* redirect_pos) {
+    *redirect_pos = '\0';          // left command is now input
+    char *right = redirect_pos + 1; // right command starts here
+    char *left = input;
+
+    int processID = fork();
+
+    if (processID < 0) {
+        printf("Shell: Fork failed.\n");
+        exit(EXIT_FAILURE);
+    }else if (processID == 0) {
+        right = strtok(right, " \t\n");
+        int fd = open(right, O_RDONLY);
+        dup2(fd, STDIN_FILENO);
         close(fd);
 
         left = strtok(left, " \t\n");
