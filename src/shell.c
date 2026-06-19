@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 int main(void) {
 
@@ -110,6 +111,46 @@ int main(void) {
             // waiting for sub processes to finish
             waitpid(processID1, NULL, 0);
             waitpid(processID2, NULL, 0);
+
+        }else if (redirect_pos != NULL) {
+            *redirect_pos = '\0';          // left command is now input
+            char *right = redirect_pos + 1; // right command starts here
+            char *left = input;
+
+            int processID = fork();
+
+            if (processID < 0) {
+                printf("Shell: Fork failed.\n");
+                exit(EXIT_FAILURE);
+            }else if (processID == 0) {
+                right = strtok(right, " \t\n");
+                int fd = open(right, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+
+                left = strtok(left, " \t\n");
+
+                char *argv[64];
+                int argc = 0;
+
+                while (left != NULL && argc < 63) {
+                    argv[argc++] = left;
+                    left = strtok(NULL, " \t\n");
+                }
+
+                argv[argc] = NULL;  // null for execvp
+
+                char* command = argv[0];
+
+                if (execvp(command, argv) == -1) {
+                    printf("Shell: No such command\n");
+                    exit(EXIT_FAILURE);
+                }
+
+            }else {
+                waitpid(processID, NULL, 0);
+            }
+
 
         }else {
             char* token = strtok(input, " \t\n");
