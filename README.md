@@ -3,7 +3,7 @@
 A custom UNIX shell made from scratch in C covering fork/exec with pipes, redirection and signal handling. I built this project
 to understand the UNIX system better and get a feel for how syscalls are used. I intend to build a PTY terminal emulator around it to
 complete the project.
----
+
 
 ## **Features**
 
