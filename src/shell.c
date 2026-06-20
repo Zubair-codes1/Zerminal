@@ -10,6 +10,7 @@
 // function declarations
 void handleInput(void);
 void handlePipes(char* input, char* pipes_pos);
+void handleAppendRedirection(char* input, char* redirect_pos);
 void handleOutputRedirection(char* input, char* redirect_pos);
 void handleInputRedirection(char* input, char* redirect_pos);
 void runStandardCommands(char* input);
@@ -59,11 +60,14 @@ void handleInput(void) {
     }
 
     char* pipe_pos = strchr(input, '|');
+    char* append_redirect_pos = strstr(input, ">>");
     char* output_redirect_pos = strchr(input, '>');
     char* input_redirect_pos = strchr(input, '<');
 
     if (pipe_pos != NULL) {
         handlePipes(input, pipe_pos);
+    }else if(append_redirect_pos != NULL) {
+        handleAppendRedirection(input, append_redirect_pos);
     }else if (output_redirect_pos != NULL) {
         handleOutputRedirection(input, output_redirect_pos);
     }else if (input_redirect_pos != NULL) {
@@ -164,6 +168,53 @@ void handlePipes(char* input, char* pipe_pos) {
     // waiting for sub processes to finish
     waitpid(processID1, NULL, 0);
     waitpid(processID2, NULL, 0);
+}
+
+/**
+ * Handle append redirection
+ * 
+ * @param input full input string
+ * @param redirect_pos >> redirection position in input
+ */
+void handleAppendRedirection(char* input, char* redirect_pos) {
+    *redirect_pos = '\0';          // left command is now input
+    char *right = redirect_pos + 2; // right command starts here
+    char *left = input;
+
+    int processID = fork();
+
+    if (processID < 0) {
+        printf("Shell: Fork failed.\n");
+        exit(EXIT_FAILURE);
+    }else if (processID == 0) {
+        signal(SIGINT, SIG_DFL);
+        right = strtok(right, " \t\n");
+        int fd = open(right, O_CREAT | O_APPEND | O_WRONLY, 0644);
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+
+        left = strtok(left, " \t\n");
+
+        char *argv[64];
+        int argc = 0;
+
+        while (left != NULL && argc < 63) {
+            argv[argc++] = left;
+            left = strtok(NULL, " \t\n");
+        }
+
+        argv[argc] = NULL;  // null for execvp
+
+        char* command = argv[0];
+
+        if (execvp(command, argv) == -1) {
+            printf("Shell: No such command\n");
+            exit(EXIT_FAILURE);
+        }
+
+    }else {
+        waitpid(processID, NULL, 0);
+    }
 }
 
 /**
