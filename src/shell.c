@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
 
 // function declarations
 void handleInput(void);
@@ -19,6 +20,7 @@ void runInBuiltCommands(char* token);
  */
 int main(void) {
 
+    signal(SIGINT, SIG_IGN);
     char directory[1024];
 
     while (true) {
@@ -26,7 +28,7 @@ int main(void) {
             printf("Shell: Current directory doesnt exist.\n");
             break;
         }
-        printf("%s -> ", directory);
+        printf("\n%s -> ", directory);
 
         handleInput();
         
@@ -42,7 +44,12 @@ int main(void) {
 void handleInput(void) {
     char input[1024];
 
-    fgets(input, 1024, stdin);
+    // check for null entries / signals
+    if (fgets(input, 1024, stdin) == NULL) {
+        printf("\n");
+        return;
+    }
+
     input[strlen(input) - 1] = '\0';
 
     printf("\n");
@@ -87,6 +94,8 @@ void handlePipes(char* input, char* pipe_pos) {
         printf("Shell: Fork Failed.\n");
         exit(EXIT_FAILURE);
     }else if (processID1 == 0) {
+
+        signal(SIGINT, SIG_DFL);
         dup2(fds[1], STDOUT_FILENO);
         close(fds[0]);
         close(fds[1]);
@@ -113,11 +122,14 @@ void handlePipes(char* input, char* pipe_pos) {
     }
     
     // sub process 2 - handles input
+
     int processID2 = fork();
     if (processID2 < 0) {
         printf("Shell: Fork Failed.\n");
         exit(EXIT_FAILURE);
     }else if (processID2 == 0) {
+
+        signal(SIGINT, SIG_DFL);
         dup2(fds[0], STDIN_FILENO);
         close(fds[0]);
         close(fds[1]);
@@ -171,6 +183,7 @@ void handleOutputRedirection(char* input, char* redirect_pos) {
         printf("Shell: Fork failed.\n");
         exit(EXIT_FAILURE);
     }else if (processID == 0) {
+        signal(SIGINT, SIG_DFL);
         right = strtok(right, " \t\n");
         int fd = open(right, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         dup2(fd, STDOUT_FILENO);
@@ -217,6 +230,7 @@ void handleInputRedirection(char* input, char* redirect_pos) {
         printf("Shell: Fork failed.\n");
         exit(EXIT_FAILURE);
     }else if (processID == 0) {
+        signal(SIGINT, SIG_DFL);
         right = strtok(right, " \t\n");
         int fd = open(right, O_RDONLY);
         dup2(fd, STDIN_FILENO);
@@ -276,12 +290,14 @@ void runStandardCommands(char* input) {
  * @param token tokens/input
  */
 void runInBuiltCommands(char* token) {
+
     int processID = fork();
 
     if (processID < 0) {
         printf("Shell: Fork failed\n");
         exit(EXIT_FAILURE);
     }else if (processID == 0) {
+        signal(SIGINT, SIG_DFL);
         char *argv[64];
         int argc = 0;
 
