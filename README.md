@@ -8,7 +8,7 @@ complete the project.
 
 1. Builtin commands
 2. Pipes
-3. I/O redirection
+3. I/O redirection (including >>)
 4. Signal Handling
 
 ## **Architecture**
@@ -62,8 +62,7 @@ sort < input.txt
 ## **Known Limitations**
 
 1. No multiple pipes
-2. No >>
-3. No tab completion
+2. No tab completion
 
 ## **Roadmap**
 
