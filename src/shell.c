@@ -10,6 +10,7 @@
 // function declarations
 void handleInput(void);
 void handlePipes(char* input, char* pipes_pos);
+void handleRedirection(char* right, char* left, int flags, int target_fd);
 void handleAppendRedirection(char* input, char* redirect_pos);
 void handleOutputRedirection(char* input, char* redirect_pos);
 void handleInputRedirection(char* input, char* redirect_pos);
@@ -170,17 +171,16 @@ void handlePipes(char* input, char* pipe_pos) {
     waitpid(processID2, NULL, 0);
 }
 
-/**
- * Handle append redirection
- * 
- * @param input full input string
- * @param redirect_pos >> redirection position in input
- */
-void handleAppendRedirection(char* input, char* redirect_pos) {
-    *redirect_pos = '\0';          // left command is now input
-    char *right = redirect_pos + 2; // right command starts here
-    char *left = input;
 
+/**
+ * Handles the functionality for all redirections
+ * 
+ * @param right right side
+ * @param left left side of input
+ * @param flags file opening flags
+ * @param target_fd file descriptor for I/O
+ */
+void handleRedirection(char* right, char* left, int flags, int target_fd) {
     int processID = fork();
 
     if (processID < 0) {
@@ -189,8 +189,8 @@ void handleAppendRedirection(char* input, char* redirect_pos) {
     }else if (processID == 0) {
         signal(SIGINT, SIG_DFL);
         right = strtok(right, " \t\n");
-        int fd = open(right, O_CREAT | O_APPEND | O_WRONLY, 0644);
-        dup2(fd, STDOUT_FILENO);
+        int fd = open(right, flags, 0644);
+        dup2(fd, target_fd);
         close(fd);
 
         left = strtok(left, " \t\n");
@@ -215,6 +215,21 @@ void handleAppendRedirection(char* input, char* redirect_pos) {
     }else {
         waitpid(processID, NULL, 0);
     }
+}
+
+
+/**
+ * Handle append redirection
+ * 
+ * @param input full input string
+ * @param redirect_pos >> redirection position in input
+ */
+void handleAppendRedirection(char* input, char* redirect_pos) {
+    *redirect_pos = '\0';          // left command is now input
+    char *right = redirect_pos + 2; // right command starts here
+    char *left = input;
+
+    handleRedirection(right, left, O_WRONLY | O_CREAT | O_APPEND, STDOUT_FILENO);
 }
 
 /**
@@ -228,40 +243,7 @@ void handleOutputRedirection(char* input, char* redirect_pos) {
     char *right = redirect_pos + 1; // right command starts here
     char *left = input;
 
-    int processID = fork();
-
-    if (processID < 0) {
-        printf("Shell: Fork failed.\n");
-        exit(EXIT_FAILURE);
-    }else if (processID == 0) {
-        signal(SIGINT, SIG_DFL);
-        right = strtok(right, " \t\n");
-        int fd = open(right, O_CREAT | O_TRUNC | O_WRONLY, 0644);
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
-
-        left = strtok(left, " \t\n");
-
-        char *argv[64];
-        int argc = 0;
-
-        while (left != NULL && argc < 63) {
-            argv[argc++] = left;
-            left = strtok(NULL, " \t\n");
-        }
-
-        argv[argc] = NULL;  // null for execvp
-
-        char* command = argv[0];
-
-        if (execvp(command, argv) == -1) {
-            printf("Shell: No such command\n");
-            exit(EXIT_FAILURE);
-        }
-
-    }else {
-        waitpid(processID, NULL, 0);
-    }
+    handleRedirection(right, left, O_WRONLY | O_CREAT | O_TRUNC, STDOUT_FILENO);
 }
 
 /**
@@ -275,40 +257,7 @@ void handleInputRedirection(char* input, char* redirect_pos) {
     char *right = redirect_pos + 1; // right command starts here
     char *left = input;
 
-    int processID = fork();
-
-    if (processID < 0) {
-        printf("Shell: Fork failed.\n");
-        exit(EXIT_FAILURE);
-    }else if (processID == 0) {
-        signal(SIGINT, SIG_DFL);
-        right = strtok(right, " \t\n");
-        int fd = open(right, O_RDONLY);
-        dup2(fd, STDIN_FILENO);
-        close(fd);
-
-        left = strtok(left, " \t\n");
-
-        char *argv[64];
-        int argc = 0;
-
-        while (left != NULL && argc < 63) {
-            argv[argc++] = left;
-            left = strtok(NULL, " \t\n");
-        }
-
-        argv[argc] = NULL;  // null for execvp
-
-        char* command = argv[0];
-
-        if (execvp(command, argv) == -1) {
-            printf("Shell: No such command\n");
-            exit(EXIT_FAILURE);
-        }
-
-    }else {
-        waitpid(processID, NULL, 0);
-    }
+    handleRedirection(right, left, O_RDONLY, STDIN_FILENO);
 }
 
 /**
