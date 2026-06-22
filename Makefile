@@ -1,13 +1,21 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -std=c11
 
-TARGET = bin/zerminal
-SRC = src/shell.c
+ZERMINAL = bin/zerminal
+ZERMINAL_SRC = src/shell.c
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
+MANAGER = bin/manager
+MANAGER_SRC = src/manager.c
+
+all: $(ZERMINAL) $(MANAGER)
+
+$(ZERMINAL): $(ZERMINAL_SRC)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(MANAGER): $(MANAGER_SRC)
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(ZERMINAL) $(MANAGER)
 
-.PHONY: clean
+.PHONY: all clean
