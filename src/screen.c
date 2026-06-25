@@ -24,7 +24,3 @@ typedef struct {
 
 // 2D array of cells
 Cell pixels[ROWS][COLS];
-
-// 256 characters with 16 bytes of length
-int characters[256][16];
-
