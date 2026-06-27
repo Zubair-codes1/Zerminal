@@ -22,9 +22,14 @@ typedef struct {
     int y_pos;  // y pos
 } Cursor;
 
-// Extern declarations: Tell everyone these variables exist globally
+// Extern declarations: These variables exist globally
 extern Cell pixels[ROWS][COLS];
 extern Cursor terminal_cursor;
+
+// canvas mutex
 extern pthread_mutex_t canvas_mutex;
+
+// function to initialise terminal screen
+void initialise_screen(void);
 
 #endif

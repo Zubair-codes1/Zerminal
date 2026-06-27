@@ -4,18 +4,18 @@ CFLAGS = -Wall -Wextra -pedantic -std=c11
 SHELL_BIN = bin/shell
 SHELL_SRC = src/shell.c
 
-MANAGER_BIN = bin/manager
-MANAGER_SRC = src/manager.c
+ZERMINAL_BIN = bin/zerminal
+ZERMINAL_SRC = src/manager.c src/screen.c
 
-all: $(SHELL_BIN) $(MANAGER_BIN)
+all: $(SHELL_BIN) $(ZERMINAL_BIN)
 
 $(SHELL_BIN): $(SHELL_SRC)
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< -lpthread
 
-$(MANAGER_BIN): $(MANAGER_SRC)
-	$(CC) $(CFLAGS) -o $@ $<
+$(ZERMINAL_BIN): $(ZERMINAL_SRC)
+	$(CC) -I/opt/homebrew/include $(CFLAGS) -o $@ $^ -L/opt/homebrew/lib -lpthread -lraylib
 
 clean:
-	rm -f $(SHELL_BIN) $(MANAGER_BIN)
+	rm -f $(SHELL_BIN) $(ZERMINAL_BIN)
 
 .PHONY: all clean

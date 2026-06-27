@@ -4,9 +4,14 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <raylib.h>
 #include <poll.h>
 #include <stdbool.h>
 #include <termios.h>
+#include "../include/screen.h"
+
+// function declarations
+void* pty_reader_thread(void* arg);
 
 /**
  * Main function
@@ -134,41 +139,116 @@ int main(void) {
         fds[1].fd = master_fd;
         fds[1].events = POLLIN;
 
-        // polling loop
-        while (true) {
+        // initialise the screen
+        initialise_screen();
 
-            // polls constantly for an activity
-            int activity = poll(fds, fds_size, -1);
+        // creating thread to read master fd
+        pthread_t reader_tid;
 
-            if (activity == -1) {
-                perror("Poll error");
-                break;
-            }
-
-            // User input is read
-            if (fds[0].revents & POLLIN) {
-                char buffer[1024];
-                int bytes_read = read(fds[0].fd, buffer, sizeof(buffer));
-
-                write(master_fd, buffer, bytes_read);
-            }
-
-            // master_fd is read
-            if (fds[1].revents & POLLIN) {
-                char buffer[1024];
-                int bytes_read = read(fds[1].fd, buffer, sizeof(buffer));
-
-                if (bytes_read <= 0) {
-                    printf("[SHELL EXITED]\n");
-                    break;
-                }
-
-                write(STDOUT_FILENO, buffer, bytes_read);
-            }
+        if (pthread_create(&reader_tid, NULL, pty_reader_thread, &master_fd) != 0) {
+            perror("Failed to create reader thread.");
+            return EXIT_FAILURE;
         }
+
+        pthread_detach(reader_tid);
+
+        // screen constants
+        const int font_width = 8;
+        const int font_height = 16;
+        const int scale = 2;
+
+        const int screen_width = font_width * COLS * scale;
+        const int screen_height = font_height * ROWS * scale;
+        
+
+        SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
+
+        // initialise raylib window and set FPS
+        InitWindow(screen_width, screen_height, "Zerminal");
+        SetTargetFPS(60);
+
+        // UI event loop
+        while (!WindowShouldClose()) {
+
+            // key pressed and write to master fd
+            int keyPressed = GetCharPressed();
+            while (keyPressed > 0) {
+                char character = (char) keyPressed;
+                write(master_fd, &character, 1);
+                keyPressed = GetCharPressed();
+            }
+
+            // backspace and enter
+            if (IsKeyPressed(KEY_ENTER)) {
+                write(master_fd , "\r", 1);
+            }
+
+            if (IsKeyPressed(KEY_BACKSPACE)) {
+                write(master_fd, "\x7f", 1);
+            }
+
+            // start drawing on screen
+            BeginDrawing();
+            ClearBackground(BLACK);
+
+            pthread_mutex_lock(&canvas_mutex);
+
+            // grid boxes (temporary)
+            for (int row = 0; row < ROWS; row++) {
+                for (int col = 0; col < COLS; col ++ ) {
+                    int pixel_x = col * font_width * scale;
+                    int pixel_y = row * font_height * scale;
+
+                    DrawRectangleLines(pixel_x, pixel_y, font_width * scale, font_height * scale, DARKGRAY);
+                }
+            }
+
+            // cursor prompt location
+            DrawRectangle(terminal_cursor.x_pos * font_width * scale, terminal_cursor.y_pos * font_height * scale, font_width * scale, font_height * scale, RAYWHITE);
+
+            pthread_mutex_unlock(&canvas_mutex);
+
+            EndDrawing();
+        }
+        
+        CloseWindow();
 
         tcsetattr(STDIN_FILENO, TCSANOW, &original_settings);
     }
 
     return EXIT_SUCCESS;
+}
+
+
+/**
+ * Function that runs a background thread
+ * 
+ * @param arg master fd
+ */
+void* pty_reader_thread(void* arg) {
+    // get master fd from pointer
+    int master_fd = *(int *)arg;
+
+    char buffer[1024];
+
+    // reading from master_fd
+    while (true) {
+        int bytes_read = read(master_fd, buffer, sizeof(buffer));
+
+        if (bytes_read <= 0) {
+            printf("[SHELL EXITED via Threads]");
+            break;
+        }
+
+        pthread_mutex_lock(&canvas_mutex);
+
+        // parsing each character that is returned
+        for (int i = 0; i < bytes_read; i++) {
+            char c = buffer[i];
+        }
+
+        pthread_mutex_unlock(&canvas_mutex);
+    }
+
+    return NULL;
 }

@@ -1,26 +1,27 @@
 #include <stdio.h>
-#include <pthread.h>
-#include <stdint.h>
+#include "../include/screen.h"
 
-// each cell
-typedef struct {
-    char character;     // actual character being held
-    uint32_t fg_colour; // foreground colour
-    uint32_t bg_colour; // background colour
-    uint8_t attrs;   // attributes
-} Cell;
-
-
-// Tracking Cursor
-typedef struct {
-    int x_pos;  // x pos
-    int y_pos;  // y pos
-} Cursor;
-
-
-// cols and rows for grid
-#define COLS 80
-#define ROWS 25
-
-// 2D array of cells
+// cells/pixels
 Cell pixels[ROWS][COLS];
+// terminal cursor
+Cursor terminal_cursor;
+
+// canvas mutex
+pthread_mutex_t canvas_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void initialise_screen(void) {
+
+    // intitial cursor positions
+    terminal_cursor.x_pos = 0;
+    terminal_cursor.y_pos = 0;
+
+    // clearing screen cells
+    for (int row = 0; row < ROWS; row++) {
+        for (int col = 0; col < COLS; col++) {
+            pixels[row][col].character = ' ';
+            pixels[row][col].bg_colour = 0x000000FF; // black bg_colour
+            pixels[row][col].fg_colour = 0xFFFFFFFF; // white fg_colour
+            pixels[row][col].attrs = 0;     // no attributes
+        }
+    }
+}
