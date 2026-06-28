@@ -9,9 +9,11 @@
 #include <stdbool.h>
 #include <termios.h>
 #include "../include/screen.h"
+#include "../include/font8x16.h"
 
 // function declarations
 void* pty_reader_thread(void* arg);
+void move_screen_down(void);
 
 /**
  * Main function
@@ -199,7 +201,22 @@ int main(void) {
                     int pixel_x = col * font_width * scale;
                     int pixel_y = row * font_height * scale;
 
-                    DrawRectangleLines(pixel_x, pixel_y, font_width * scale, font_height * scale, DARKGRAY);
+                    unsigned char character = (unsigned char) pixels[row][col].character;
+
+                    for (int y = 0; y < 16; y++) {
+                        unsigned char byte_row = font8x16[character][y];
+
+                        for (int x = 0; x < 8; x++) {
+
+                            if (byte_row & (0x80 >> x)) {
+
+                                int draw_x = pixel_x + (x * scale);
+                                int draw_y = pixel_y + (y * scale);
+
+                                DrawRectangle(draw_x, draw_y, scale, scale, WHITE);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -245,6 +262,28 @@ void* pty_reader_thread(void* arg) {
         // parsing each character that is returned
         for (int i = 0; i < bytes_read; i++) {
             char c = buffer[i];
+
+            if (c == '\r') {
+                terminal_cursor.x_pos = 0;
+
+            } else if (c == '\n') {
+                terminal_cursor.y_pos++;
+
+            } else {
+                if (terminal_cursor.x_pos >= COLS) {
+                    terminal_cursor.x_pos = 0;
+                    terminal_cursor.y_pos += 1;
+                }
+
+                if (terminal_cursor.y_pos >= ROWS) {
+                    move_screen_down();
+                }
+
+                pixels[terminal_cursor.y_pos][terminal_cursor.x_pos].character = c;
+                terminal_cursor.x_pos++;
+
+            } 
+
         }
 
         pthread_mutex_unlock(&canvas_mutex);
@@ -252,3 +291,23 @@ void* pty_reader_thread(void* arg) {
 
     return NULL;
 }
+
+/**
+ * Moves the screen down after max line is reached
+ */
+void move_screen_down(void) {
+    for (int row = 1; row < ROWS; row++) {
+        for (int col = 0; col < COLS; col++) {
+            pixels[row-1][col] = pixels[row][col];
+        }
+    }
+
+    for (int col = 0; col < COLS; col++) {
+        pixels[ROWS - 1][col].character = ' ';
+        pixels[ROWS - 1][col].fg_colour = 0xFFFFFFFF;
+        pixels[ROWS - 1][col].bg_colour = 0x000000FF;
+    }
+
+    terminal_cursor.y_pos = ROWS - 1;
+}
+
