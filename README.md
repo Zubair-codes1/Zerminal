@@ -1,32 +1,33 @@
-# **Zerminal Shell**
+# **Zerminal Shell & Terminal Emulator**
 
-A custom UNIX shell made from scratch in C covering fork/exec with pipes, redirection and signal handling. I built this project
-to understand the UNIX system better and get a feel for how syscalls are used. I intend to build a PTY terminal emulator around it to
-complete the project.
+A lightweight, custom UNIX shell and graphical terminal emulator built completely from scratch in C. This project combines a low-level command-line interpreter (covering fork/exec, pipelines, redirection, and signals) with a fully-fledged desktop frontend utilizing **raylib** and a real-time **POSIX Pseudoterminal (PTY)** backend.
+
 
 ## **Features**
 
-1. Builtin commands
-2. Pipes
-3. I/O redirection (including >>)
-4. Signal Handling
+### **1. Graphical Terminal Layer (Zerminal GUI)**
+* **Raylib Canvas Renderer:** Completely bypasses standard host terminal text output to paint graphics directly to an independent OS window.
+* **Bit-Mask Raster Font Engine:** Uses a custom $8 \times 16$ monochrome bitmap array font to draw text character-by-bit onto the layout canvas.
+* **Asynchronous Parallel Pipelines:** Runs an independent keyboard event polling engine on the main window thread while handling incoming stream data simultaneously.
 
-## **Architecture**
+### **2. Custom UNIX Shell Backend**
+* **Builtin Commands:** Native support for critical shell environment modifiers (`cd`, `exit`).
+* **Process Pipelines:** Inter-process communication via `pipe()` buffers with deterministic descriptor lifecycle handling.
+* **I/O Redirection:** Stream capturing and routing (`>`, `<`, and append `>>`).
+* **Default Signal Delegation:** Parent process ignores terminal interruptions while dynamically restoring default signal actions (`SIG_DFL`) within spawned sub-tasks.
 
-Certain commands that do not change the shell's process state like mkdir, ls and others are handled using a child process that is forked
-from the main shell process. This is because execvp (variant of exec()) runs a new process on the current one. If this was done on the
-parent process then it would cause the shell to stop executing.
 
-Other commands are built in to the shell. This includes cd and exit. The reason for this is that these commands affect the global state of
-the shell, so they have to be carried out in the parent process because if they werent then their effects would not be seen in the shell
-(as child processes eventually end).
+## **Architecture Overview**
 
-Pipes are implemented using pipe() to create a kernel buffer with two file descriptors. Two child processes are forked — the first has its stdout redirected to the write end via dup2(), the second has its stdin redirected to the read end. Both ends are closed in every process that doesn't need them to ensure EOF is correctly signalled when the writer exits.
+Zerminal is split cleanly into a **Frontend Desktop UI** and a **Backend Execution Shell** connected over a virtual subsystem layer.
 
-For signal handling I made it so that the parent process ignores any signals and is unaffected by them, however child processes turn on default signal disposition via signal(SIGINT, SIG_DFL).
+### **The Shell Component**
+Commands modifying global state (like `cd` or `exit`) are executed natively within the parent process. External binaries (like `ls` or `mkdir`) are executed via `execvp()` inside a dedicated `fork()`. Pipelines chain processes together by re-routing standard descriptors via `dup2()`, ensuring file descriptors are tightly closed to guarantee proper EOF synchronization.
 
-For redirection, I did something similar to the pipe system but instead using only one child process and I set either its input or output
-to the file that is opened.
+### **The PTY & Threading Subsystem**
+To isolate rendering lag from shell processing, execution is driven by an asynchronous decoupled architecture:
+1.  **Main Thread (The Painter):** Spawns a dedicated Raylib window framework. It captures native OS window keyboard inputs, shifts raw characters into the PTY Master stream, and continuously redraws the visual character grid loop at a locked 60 FPS under a shared safety mutex.
+2.  **PTY Reader Thread (The Parser):** Spawns a background worker thread tasked entirely with reading output streaming from the PTY Master. It contains a mini state machine parser that converts control behaviors (like carriage returns `\r` and line feeds `\n`), manages horizontal line-wrapping limits, and triggers screen memory shunts when content vertical boundaries scroll past maximum limits.
 
 ## **Running The Program**
 
@@ -35,6 +36,7 @@ The program only works on UNIX based systems as the standard POSIX syscalls are 
 Complete build:
 ```
 git clone https://github.com/Zubair-codes1/Zerminal
+cd Zerminal
 make
 ./bin/zerminal
 ```
@@ -44,28 +46,28 @@ Or from Binary (from latest GitHub Releases):
 ./zerminal
 ```
 
-## **Syntax**
 
-```
-ls
-pwd
-cd ..
-cd ../projects
-exit
+## **Syntax & Usage Guide**
+
+```bash
 ls -la
-cd ~/projects
+pwd
+cd ../projects
 ls | grep foo
 ls > output.txt
 sort < input.txt
+exit
 ```
 
 ## **Known Limitations**
 
-1. No multiple pipes
-2. No tab completion
+1. Fixed Grid Matrix: The terminal canvas size is currently hard-locked to an $80 \times 25$ grid footprint.
+2. Single Pipelines Only: Command chaining is currently limited to a single pipe operator split.
+3. No Tab Autocompletion: File and command path discovery are not yet integrated into the command string parser.
 
 ## **Roadmap**
 
-1. Shell completion
-2. PTY implementation
-3. Zerminal GUI layer
+1. Dynamic Terminal Window Reflow: Implement IsWindowResized() handlers paired with PTY ioctl(..., TIOCSWINSZ, ...) signals to dynamically resize rows and columns on the fly when the desktop window edge is dragged.
+2. ANSI Escape Code Decoding Engine: Expand the background PTY thread parsing loop to interpret ANSI color and formatting sequences (\033[31m, etc.) to support rich terminal themes.
+3. Interactive Tab Completion: Add directory inspection routines to the shell parser to facilitate native path autocompletion.
+4. Multiple Command Chaining: Re-architect the process pipeline handler to support an arbitrary number of multiple chained sequential pipes (cmd1 | cmd2 | cmd3).
