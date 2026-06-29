@@ -269,6 +269,11 @@ void* pty_reader_thread(void* arg) {
             } else if (c == '\n') {
                 terminal_cursor.y_pos++;
 
+            } else if (c == 127 || c == '\b') {
+                if (terminal_cursor.x_pos > 0) {
+                    terminal_cursor.x_pos--;
+                    pixels[terminal_cursor.y_pos][terminal_cursor.x_pos].character = ' ';
+                }
             } else {
                 if (terminal_cursor.x_pos >= COLS) {
                     terminal_cursor.x_pos = 0;
