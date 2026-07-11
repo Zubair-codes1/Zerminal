@@ -32,4 +32,7 @@ extern pthread_mutex_t canvas_mutex;
 // function to initialise terminal screen
 void initialise_screen(void);
 
+// moving screen down
+void move_screen_down(void);
+
 #endif
