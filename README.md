@@ -1,5 +1,11 @@
 # **Zerminal Shell & Terminal Emulator**
 
+## **Badges**
+![Tests](https://github.com/Zubair-codes1/Zerminal/actions/workflows/tests.yml/badge.svg)
+
+
+## **Summary**
+
 A lightweight, custom UNIX shell and graphical terminal emulator built completely from scratch in C. This project combines a low-level command-line interpreter (covering fork/exec, pipelines, redirection, and signals) with a fully-fledged desktop frontend utilizing **raylib** and a real-time **POSIX Pseudoterminal (PTY)** backend.
 
 
