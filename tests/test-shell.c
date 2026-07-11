@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "test.h"
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,6 +10,8 @@
 #include <time.h>
 #include <signal.h>
 
+// Path to the compiled shell binary under test. Override with
+// -DSHELL_PATH=\"...\" at compile time if yours lives elsewhere.
 #ifndef SHELL_PATH
 #define SHELL_PATH "./bin/shell"
 #endif
@@ -15,6 +19,11 @@
 /**
  * Spawns a fresh shell process, writes `input` to its stdin, and reads
  * everything it prints back until the process exits (or a timeout hits).
+ *
+ * IMPORTANT: `input` must end in a command that terminates the shell
+ * (e.g. "exit\n") -- shell.c's main loop does not exit on EOF, it just
+ * reprints the prompt forever, so a script that never calls exit will
+ * hang until the timeout kills it.
  *
  * Returns true if the process was reaped within the timeout.
  */
@@ -81,7 +90,10 @@ bool run_shell(const char* input, char* output, size_t output_size, int timeout_
     pid_t waited = 0;
     for (int attempt = 0; attempt < 20 && waited == 0; attempt++) {
         waited = waitpid(pid, &status, WNOHANG);
-        if (waited == 0) usleep(50000); // 50ms
+        if (waited == 0) {
+            struct timespec delay = {.tv_sec = 0, .tv_nsec = 50000000L}; // 50ms
+            nanosleep(&delay, NULL);
+        }
     }
 
     if (waited == 0) {
@@ -220,9 +232,6 @@ TEST(test_exit_terminates_the_shell) {
     ASSERT_TRUE(reaped);
 }
 
-/**
- * run all tests
- */
 int main(void) {
     test_simple_command_runs();
     test_cd_changes_directory();
