@@ -10,10 +10,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Raylib Dependencies
+      - name: Install Raylib Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libraylib-dev clang
+          sudo apt-get install -y clang libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Raylib
+        run: |
+          git clone --depth 1 https://github.com/raysan5/raylib.git raylib
+          cd raylib/src
+          make PLATFORM=PLATFORM_DESKTOP
+          sudo make install
 
       - name: Run Tests
         run: make tests
