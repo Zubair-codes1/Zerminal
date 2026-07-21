@@ -1,53 +1,68 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=c11
-TEST_CFLAGS = $(CFLAGS) -Iinclude
+# Compiler & Flags
+CC          := clang
+CFLAGS      := -Wall -Wextra -std=c11 -pedantic -g
+INCLUDES    := -Iinclude -I/opt/homebrew/include
+LDFLAGS     := -L/opt/homebrew/lib -lraylib -lpthread
 
-SHELL_BIN = bin/shell
-SHELL_SRC = src/shell.c
+# Directories
+SRC_DIR     := src
+BUILD_DIR   := build
+BIN_DIR     := bin
+TEST_DIR    := tests
 
-ZERMINAL_BIN = bin/zerminal
-ZERMINAL_SRC = src/manager.c src/screen.c
+# Source Files & Objects
+SRCS        := $(wildcard $(SRC_DIR)/*.c)
+OBJS        := $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 
-TEST_SCREEN_BIN = bin/test_screen
-TEST_SHELL_BIN = bin/test_shell
-TEST_INPUT_BIN = bin/test_input
+# Executables
+TARGET      := $(BIN_DIR)/terminal
+SHELL_BIN   := $(BIN_DIR)/shell
 
-all: $(SHELL_BIN) $(ZERMINAL_BIN)
+# Test Executables
+TEST_SCREEN := $(BIN_DIR)/test_screen
+TEST_SHELL  := $(BIN_DIR)/test_shell
 
-$(SHELL_BIN): $(SHELL_SRC) | bin
-	$(CC) $(CFLAGS) -o $@ $< -lpthread
+.PHONY: all clean tests run
 
-$(ZERMINAL_BIN): $(ZERMINAL_SRC) | bin
-	$(CC) -I/opt/homebrew/include $(CFLAGS) -o $@ $^ -L/opt/homebrew/lib -lpthread -lraylib
+# Default target: build the main app & shell
+all: $(TARGET) $(SHELL_BIN)
 
-# --- Tests ---
+# Build main application
+$(TARGET): $(OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
-test: test-screen test-shell test-input
+# Build shell application (if built from src/shell.c or standalone)
+$(SHELL_BIN): $(SRC_DIR)/shell.c | $(BIN_DIR)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@
 
-test-screen: $(TEST_SCREEN_BIN)
-	./$(TEST_SCREEN_BIN)
+# Compile object files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(TEST_SCREEN_BIN): tests/test_screen.c src/screen.c | bin
-	$(CC) -I/opt/homebrew/include $(TEST_CFLAGS) -o $@ $^ -L/opt/homebrew/lib -lpthread -lraylib
+# Build and run all tests
+tests: $(TEST_SCREEN) $(TEST_SHELL)
+	@echo "--- Running test_screen ---"
+	@./$(TEST_SCREEN)
+	@echo "--- Running test_shell ---"
+	@./$(TEST_SHELL)
 
-# test_shell.c execs $(SHELL_BIN) as a real subprocess, so the shell
-# binary must be built first.
-test-shell: $(SHELL_BIN) $(TEST_SHELL_BIN)
-	./$(TEST_SHELL_BIN)
+# Test Screen binary (links screen implementation)
+$(TEST_SCREEN): $(TEST_DIR)/test_screen.c $(SRC_DIR)/screen.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
-$(TEST_SHELL_BIN): tests/test_shell.c | bin
-	$(CC) -I/opt/homebrew/include $(TEST_CFLAGS) -o $@ $^ -L/opt/homebrew/lib -lpthread -lraylib
+# Test Shell binary
+$(TEST_SHELL): $(TEST_DIR)/test_shell.c $(SRC_DIR)/screen.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
-test-input: $(TEST_INPUT_BIN)
-	./$(TEST_INPUT_BIN)
+# Create output directories
+$(BUILD_DIR) $(BIN_DIR):
+	mkdir -p $@
 
-$(TEST_INPUT_BIN): tests/test_input.c | bin
-	$(CC) -I/opt/homebrew/include $(TEST_CFLAGS) -o $@ $^ -L/opt/homebrew/lib -lpthread -lraylib
+# Run main terminal
+run: $(TARGET)
+	./$(TARGET)
 
-bin:
-	mkdir -p bin
-
+# Clean build artifacts
 clean:
-	rm -f $(SHELL_BIN) $(ZERMINAL_BIN) $(TEST_SCREEN_BIN) $(TEST_SHELL_BIN) $(TEST_INPUT_BIN)
-
-.PHONY: all clean test test-screen test-shell test-input
+	rm -rf $(BUILD_DIR) $(BIN_DIR)
