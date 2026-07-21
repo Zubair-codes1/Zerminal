@@ -1,5 +1,5 @@
 # Compiler & Flags
-CC          := clang
+CC          := gcc
 CFLAGS      := -Wall -Wextra -std=c11 -pedantic -g
 INCLUDES    := -Iinclude -I/opt/homebrew/include
 LDFLAGS     := -L/opt/homebrew/lib -lraylib -lpthread
