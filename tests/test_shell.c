@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "test.h"
+#include "screen.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -10,23 +12,10 @@
 #include <time.h>
 #include <signal.h>
 
-// Path to the compiled shell binary under test. Override with
-// -DSHELL_PATH=\"...\" at compile time if yours lives elsewhere.
 #ifndef SHELL_PATH
 #define SHELL_PATH "./bin/shell"
 #endif
 
-/**
- * Spawns a fresh shell process, writes `input` to its stdin, and reads
- * everything it prints back until the process exits (or a timeout hits).
- *
- * IMPORTANT: `input` must end in a command that terminates the shell
- * (e.g. "exit\n") -- shell.c's main loop does not exit on EOF, it just
- * reprints the prompt forever, so a script that never calls exit will
- * hang until the timeout kills it.
- *
- * Returns true if the process was reaped within the timeout.
- */
 bool run_shell(const char* input, char* output, size_t output_size, int timeout_seconds) {
     int in_pipe[2];   // parent writes -> child stdin
     int out_pipe[2];  // child stdout -> parent reads
@@ -40,7 +29,6 @@ bool run_shell(const char* input, char* output, size_t output_size, int timeout_
     if (pid < 0) {
         return false;
     } else if (pid == 0) {
-        // child: wire up stdin/stdout to the pipes
         dup2(in_pipe[0], STDIN_FILENO);
         dup2(out_pipe[1], STDOUT_FILENO);
         dup2(out_pipe[1], STDERR_FILENO);
@@ -51,15 +39,14 @@ bool run_shell(const char* input, char* output, size_t output_size, int timeout_
         close(out_pipe[1]);
 
         execl(SHELL_PATH, SHELL_PATH, (char*)NULL);
-        _exit(127); // execl failed
+        _exit(127);
     }
 
-    // parent
     close(in_pipe[0]);
     close(out_pipe[1]);
 
     write(in_pipe[1], input, strlen(input));
-    close(in_pipe[1]); // signal EOF once we're done sending commands
+    close(in_pipe[1]);
 
     size_t total_read = 0;
     time_t start = time(NULL);
@@ -74,7 +61,7 @@ bool run_shell(const char* input, char* output, size_t output_size, int timeout_
 
         if (ready > 0) {
             ssize_t n = read(out_pipe[0], output + total_read, output_size - 1 - total_read);
-            if (n <= 0) break; // child closed its stdout (likely exited)
+            if (n <= 0) break;
             total_read += (size_t)n;
         }
 
@@ -83,9 +70,6 @@ bool run_shell(const char* input, char* output, size_t output_size, int timeout_
     output[total_read] = '\0';
     close(out_pipe[0]);
 
-    // give the child a brief grace period to actually become reapable
-    // after closing its stdout, then fall back to killing it if it's
-    // truly stuck (e.g. shell.c's EOF-handling loop never calling exit)
     int status;
     pid_t waited = 0;
     for (int attempt = 0; attempt < 20 && waited == 0; attempt++) {
@@ -174,7 +158,6 @@ TEST(test_output_redirection_creates_file) {
 }
 
 TEST(test_output_redirection_truncates_existing_file) {
-    // pre-populate the file with something longer than what we redirect next
     FILE* f = fopen("/tmp/zerminal_test_trunc.txt", "w");
     fprintf(f, "this line should be gone after truncation\n");
     fclose(f);
