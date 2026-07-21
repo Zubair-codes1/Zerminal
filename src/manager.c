@@ -8,292 +8,226 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <termios.h>
+#include <pthread.h>
 #include "../include/screen.h"
 #include "../include/font8x16.h"
 
-// function declarations
 void* pty_reader_thread(void* arg);
-void move_screen_down(void);
 
-/**
- * Main function
- */
 int main(void) {
-
-    // creating a new PTY master
     int master_fd = posix_openpt(O_RDWR);
-
     if (master_fd == -1) {
         printf("Error: PTY master not created.\n");
         return EXIT_FAILURE;
     }
 
-    // granting access to master to use PTY slave 
-    int grant_success = grantpt(master_fd);
-
-    if (grant_success == -1) {
+    if (grantpt(master_fd) == -1) {
         printf("Error: PTY master could not own PTY slave.\n");
         return EXIT_FAILURE;
     }
 
-    // unlockding slave so it can be used by master
-    int unlock_success = unlockpt(master_fd);
-
-    if (unlock_success == -1) {
+    if (unlockpt(master_fd) == -1) {
         printf("Error: PTY slave was not unlocked.\n");
         return EXIT_FAILURE;
     }
 
-    // gets the string path to the slave
     char* slave_path = ptsname(master_fd);
-
     if (slave_path == NULL) {
         printf("Error: Null slave path.\n");
         return EXIT_FAILURE;
     }
 
-
-    // child process - shell
     pid_t childProcessID = fork();
-
     if (childProcessID < 0) {
         printf("Error: Failed to setup child process (fork failed).\n");
         return EXIT_FAILURE;
-    }else if (childProcessID == 0) {
-
-        // create new session
-        pid_t sessionID = setsid();
-
-        if (sessionID == -1) {
+    } else if (childProcessID == 0) {
+        if (setsid() == -1) {
             printf("Error: Session not created.\n");
             exit(EXIT_FAILURE);
         }
 
-        // open slave path
         int slave_fd = open(slave_path, O_RDWR);
-
         if (slave_fd == -1) {
             printf("Error: Slave file path couldnt be opened.\n");
             exit(EXIT_FAILURE);
         }
 
-        int terminal_success = ioctl(slave_fd, TIOCSCTTY, 0);
-
-        if (terminal_success == -1) {
+        if (ioctl(slave_fd, TIOCSCTTY, 0) == -1) {
             printf("Error: Could not assign slave to be the controlling terminal.\n");
             exit(EXIT_FAILURE);
         }
 
-        // saving STDERR_FILENO for error messages
         int safe_stderr = dup(STDERR_FILENO);
-
-        // set input, output and errors to slave_fd
         int std_fds[] = {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
 
         for (int i = 0; i < 3; i++) {
             if (dup2(slave_fd, std_fds[i]) < 0) {
                 perror("dup2 redirection failed");
-                exit(1); // Exit process if critical streams fail
+                exit(1);
             }
         }
 
-        // closing the slave_fd
-        int close_success = close(slave_fd);
+        close(slave_fd);
 
-        if (close_success == -1) {
-            printf("Error: Could not close slave file descriptor.\n");
-        }
-
-        // executing the shell binary (zerminal)
         char *shell_argv[] = {"./bin/shell", NULL};
-
-        int execution_success = execvp("./bin/shell", shell_argv);
-
-        if (execution_success == -1) {
+        if (execvp("./bin/shell", shell_argv) == -1) {
             dprintf(safe_stderr, "Error: Zerminal execution failed.\n");
             exit(EXIT_FAILURE);
         }
-
-
-    }else {
-
-        // original settings
+    } else {
+        // Parent Process Setup
         struct termios original_settings;
-
         tcgetattr(STDIN_FILENO, &original_settings);
 
-        // raw settings
         struct termios raw_settings = original_settings;
         raw_settings.c_lflag &= ~(ECHO | ICANON | ISIG);
-
-        raw_settings.c_cc[VMIN] = 1;    // reads data instantly (1 keystroke)
-        raw_settings.c_cc[VTIME] = 0;   // does not wait
-
+        raw_settings.c_cc[VMIN] = 1;
+        raw_settings.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSANOW, &raw_settings);
 
-        // array of structs for watching input and master_fd (polling)
-        struct pollfd fds[2];
-        int fds_size = 2;
+        // Window & Terminal State Setup
+        int initial_cols = 800 / FONT_WIDTH;
+        int initial_rows = 600 / FONT_HEIGHT;
+        initialise_screen(&terminal, initial_cols, initial_rows);
 
-        fds[0].fd = STDIN_FILENO;
-        fds[0].events = POLLIN;     // any data available
+        // Bundle args for background thread
+        ReaderThreadArgs thread_args = {
+            .master_fd = master_fd,
+            .term = &terminal,
+            .parser = &global_parser
+        };
 
-        fds[1].fd = master_fd;
-        fds[1].events = POLLIN;
-
-        // initialise the screen
-        initialise_screen();
-
-        // creating thread to read master fd
         pthread_t reader_tid;
-
-        if (pthread_create(&reader_tid, NULL, pty_reader_thread, &master_fd) != 0) {
+        if (pthread_create(&reader_tid, NULL, pty_reader_thread, &thread_args) != 0) {
             perror("Failed to create reader thread.");
             return EXIT_FAILURE;
         }
-
         pthread_detach(reader_tid);
 
-        // screen constants
-        const int font_width = 8;
-        const int font_height = 16;
-        const int scale = 2;
-
-        const int screen_width = font_width * COLS * scale;
-        const int screen_height = font_height * ROWS * scale;
-        
-
         SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE);
-
-        // initialise raylib window and set FPS
-        InitWindow(screen_width, screen_height, "Zerminal");
+        InitWindow(800, 600, "Raylib Terminal Emulator");
         SetTargetFPS(60);
 
-        // UI event loop
         while (!WindowShouldClose()) {
+            if (IsWindowResized()) {
+                int newCols = GetScreenWidth() / FONT_WIDTH;
+                int newRows = GetScreenHeight() / FONT_HEIGHT;
 
-            // key pressed and write to master fd
-            int keyPressed = GetCharPressed();
-            while (keyPressed > 0) {
-                char character = (char) keyPressed;
-                write(master_fd, &character, 1);
-                keyPressed = GetCharPressed();
+                pthread_mutex_lock(&canvas_mutex);
+                resizeTerminal(&terminal, newCols, newRows);
+                pthread_mutex_unlock(&canvas_mutex);
+
+                // Notify shell of window dimension change
+                struct winsize ws = {
+                    .ws_row = newRows,
+                    .ws_col = newCols,
+                    .ws_xpixel = GetScreenWidth(),
+                    .ws_ypixel = GetScreenHeight()
+                };
+                ioctl(master_fd, TIOCSWINSZ, &ws);
             }
 
-            // backspace and enter
-            if (IsKeyPressed(KEY_ENTER)) {
-                write(master_fd , "\r", 1);
+            int key = GetCharPressed();
+            while (key > 0) {
+                if (key >= 32 && key <= 126) {
+                    char c = (char)key;
+                    write(master_fd, &c, 1);
+                }
+                key = GetCharPressed(); // Check if more characters are queued
             }
 
-            if (IsKeyPressed(KEY_BACKSPACE)) {
-                write(master_fd, "\x7f", 1);
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                char c = '\x1b'; // 0x1B - Escape key to exit Insert Mode in Vim
+                write(master_fd, &c, 1);
+            } else if (IsKeyPressed(KEY_UP)) {
+                write(master_fd, "\x1b[A", 3);
+            } else if (IsKeyPressed(KEY_DOWN)) {
+                write(master_fd, "\x1b[B", 3);
+            } else if (IsKeyPressed(KEY_RIGHT)) {
+                write(master_fd, "\x1b[C", 3);
+            } else if (IsKeyPressed(KEY_LEFT)) {
+                write(master_fd, "\x1b[D", 3);
+            }else if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+                char c = '\n';
+                write(master_fd, &c, 1);
+            } else if (IsKeyPressed(KEY_BACKSPACE)) {
+                char c = 127; // ASCII DEL / Backspace
+                write(master_fd, &c, 1);
+            } else if (IsKeyPressed(KEY_TAB)) {
+                char c = '\t';
+                write(master_fd, &c, 1);
             }
 
-            // start drawing on screen
             BeginDrawing();
             ClearBackground(BLACK);
 
             pthread_mutex_lock(&canvas_mutex);
+            for (int r = 0; r < terminal.rows; r++) {
+                for (int c = 0; c < terminal.cols; c++) {
+                    Cell cell = terminal.grid[r * terminal.cols + c];
+                    int x = c * FONT_WIDTH;
+                    int y = r * FONT_HEIGHT;
 
-            // grid boxes (temporary)
-            for (int row = 0; row < ROWS; row++) {
-                for (int col = 0; col < COLS; col ++ ) {
-                    int pixel_x = col * font_width * scale;
-                    int pixel_y = row * font_height * scale;
-
-                    unsigned char character = (unsigned char) pixels[row][col].character;
-
-                    for (int y = 0; y < 16; y++) {
-                        unsigned char byte_row = font8x16[character][y];
-
-                        for (int x = 0; x < 8; x++) {
-
-                            if (byte_row & (0x80 >> x)) {
-
-                                int draw_x = pixel_x + (x * scale);
-                                int draw_y = pixel_y + (y * scale);
-
-                                DrawRectangle(draw_x, draw_y, scale, scale, WHITE);
+                    // Draw background rectangle if filled
+                    if (cell.bg_colour.a != 0) {
+                        DrawRectangle(x, y, FONT_WIDTH, FONT_HEIGHT, cell.bg_colour);
+                    }
+                    
+                    // Render bitmap character from font8x16 header
+                    if (cell.character != ' ' && cell.character != 0) {
+                        unsigned char ch = (unsigned char)cell.character;
+                        for (int py = 0; py < 16; py++) {
+                            // Grab byte row for character from font array
+                            unsigned char row_byte = font8x16[ch][py];
+                            for (int px = 0; px < 8; px++) {
+                                // Check if pixel bit is active (MSB to LSB)
+                                if (row_byte & (0x80 >> px)) {
+                                    DrawPixel(x + px, y + py, cell.fg_colour);
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // cursor prompt location
-            DrawRectangle(terminal_cursor.x_pos * font_width * scale, terminal_cursor.y_pos * font_height * scale, font_width * scale, font_height * scale, RAYWHITE);
+            if (terminal.cursor.visible == true) {
+                int cursor_x = terminal.cursor.x_pos * FONT_WIDTH;
+                int cursor_y = terminal.cursor.y_pos * FONT_HEIGHT;
+
+                DrawRectangle(cursor_x, cursor_y, FONT_WIDTH, FONT_HEIGHT, (Color){ 255, 255, 255, 160 });
+            }
 
             pthread_mutex_unlock(&canvas_mutex);
 
             EndDrawing();
         }
-        
-        CloseWindow();
 
         tcsetattr(STDIN_FILENO, TCSANOW, &original_settings);
+        free(terminal.grid);
+        CloseWindow();
+        return 0;
     }
-
-    return EXIT_SUCCESS;
 }
 
-
-/**
- * Function that runs a background thread
- * 
- * @param arg master fd
- */
 void* pty_reader_thread(void* arg) {
-    // get master fd from pointer
-    int master_fd = *(int *)arg;
-
+    ReaderThreadArgs *args = (ReaderThreadArgs *)arg;
     char buffer[1024];
 
-    // reading from master_fd
     while (true) {
-        int bytes_read = read(master_fd, buffer, sizeof(buffer));
+        int bytes_read = read(args->master_fd, buffer, sizeof(buffer));
 
         if (bytes_read <= 0) {
-            printf("[SHELL EXITED via Threads]");
+            printf("[SHELL EXITED via Threads]\n");
             break;
         }
 
         pthread_mutex_lock(&canvas_mutex);
-
-        // parsing each character that is returned
         for (int i = 0; i < bytes_read; i++) {
-            char c = buffer[i];
-
-            if (c == '\r') {
-                terminal_cursor.x_pos = 0;
-
-            } else if (c == '\n') {
-                terminal_cursor.y_pos++;
-
-            } else if (c == 127 || c == '\b') {
-                if (terminal_cursor.x_pos > 0) {
-                    terminal_cursor.x_pos--;
-                    pixels[terminal_cursor.y_pos][terminal_cursor.x_pos].character = ' ';
-                }
-            } else {
-                if (terminal_cursor.x_pos >= COLS) {
-                    terminal_cursor.x_pos = 0;
-                    terminal_cursor.y_pos += 1;
-                }
-
-                if (terminal_cursor.y_pos >= ROWS) {
-                    move_screen_down();
-                }
-
-                pixels[terminal_cursor.y_pos][terminal_cursor.x_pos].character = c;
-                terminal_cursor.x_pos++;
-
-            } 
-
+            ProcessChar(args->term, args->parser, buffer[i]);
         }
-
         pthread_mutex_unlock(&canvas_mutex);
     }
 
     return NULL;
 }
-
