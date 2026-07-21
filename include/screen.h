@@ -3,36 +3,70 @@
 
 #include <stdint.h>
 #include <pthread.h>
+#include <raylib.h>
 
-// cols and rows for grid
-#define COLS 80
-#define ROWS 25
+#define DEFAULT_COLS 80
+#define DEFAULT_ROWS 25
 
-// each cell
+#define FONT_WIDTH 8
+#define FONT_HEIGHT 16
+
+// Display cell
 typedef struct {
-    char character;     // actual character being held
-    uint32_t fg_colour; // foreground colour
-    uint32_t bg_colour; // background colour
-    uint8_t attrs;      // attributes
+    char character;
+    Color fg_colour;
+    Color bg_colour;
+    uint8_t attrs;
 } Cell;
 
 // Tracking Cursor
 typedef struct {
-    int x_pos;  // x pos
-    int y_pos;  // y pos
+    int x_pos;
+    int y_pos;
+    bool visible; // <-- Add this
 } Cursor;
 
-// Extern declarations: These variables exist globally
-extern Cell pixels[ROWS][COLS];
-extern Cursor terminal_cursor;
+// Terminal buffer
+typedef struct {
+    Cell *grid;     // Dynamic 1D grid array (size = rows * cols)
+    int cols;
+    int rows;
+    Cursor cursor;
+} Terminal;
 
-// canvas mutex
+// ANSI ESC Parser state
+typedef enum {
+    STATE_NORMAL,
+    STATE_ESC,
+    STATE_CSI
+} ParseState;
+
+typedef struct {
+    ParseState state;
+    char paramBuffer[32];
+    int paramIdx;
+    bool isPrivate;
+    Color currentFg;
+    Color currentBg;
+} ANSIParser;
+
+// Thread args bundle for reader thread
+typedef struct {
+    int master_fd;
+    Terminal *term;
+    ANSIParser *parser;
+} ReaderThreadArgs;
+
+// Global declarations
+extern Terminal terminal;
+extern ANSIParser global_parser;
 extern pthread_mutex_t canvas_mutex;
 
-// function to initialise terminal screen
-void initialise_screen(void);
-
-// moving screen down
-void move_screen_down(void);
+// Function declarations
+void initialise_screen(Terminal *term, int cols, int rows);
+void resizeTerminal(Terminal *term, int newCols, int newRows);
+void move_screen_down(Terminal *term);
+void ProcessChar(Terminal *term, ANSIParser *parser, char c);
+void ExecuteCSICommand(Terminal *term, ANSIParser *parser, char cmd);
 
 #endif
