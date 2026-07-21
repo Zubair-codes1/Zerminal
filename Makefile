@@ -47,7 +47,7 @@ $(TEST_SHELL): $(TEST_DIR)/test_shell.c $(SCREEN_SRC) | $(BIN_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
 # Run all 3 test suites
-tests: $(TEST_INPUT) $(TEST_SCREEN) $(TEST_SHELL)
+tests: $(SHELL_BIN) $(TEST_INPUT) $(TEST_SCREEN) $(TEST_SHELL)	
 	@echo "\n=== Running test_input ==="
 	@./$(TEST_INPUT)
 	@echo "\n=== Running test_screen ==="
